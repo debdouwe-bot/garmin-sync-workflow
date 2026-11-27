@@ -1,15 +1,14 @@
-"""Fetch Garmin Connect data through the Personal API and return it as the workflow result.
+"""Fetch Garmin Connect data through the Personal API and return it as the workflow result."""
 
-Intended for a scheduled managed deployment: the Garmin Personal API key is bound
-from a workspace secret to the environment variable ``GARMIN_PERSONAL_API_KEY``.
-"""
-
+import logging
 import os
 from datetime import date, timedelta
 
 from pydantic import BaseModel, Field
 
 import mistralai.workflows as workflows
+
+logger = logging.getLogger("worker.garmin_sync")
 
 
 class GarminSyncInput(BaseModel):
@@ -23,13 +22,7 @@ class GarminSyncInput(BaseModel):
     )
 
 
-@workflows.activity(
-    name="fetch-garmin-data",
-    start_to_close_timeout=timedelta(minutes=10),
-    retry_policy_max_attempts=3,
-)
-async def fetch_garmin_data(days_back: int) -> dict:
-    """Fetch runs/activities and daily summaries for the last `days_back` days."""
+def _fetch_impl(days_back: int) -> dict:
     from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
 
     api_key = os.environ.get("GARMIN_PERSONAL_API_KEY", "").strip()
@@ -70,6 +63,20 @@ async def fetch_garmin_data(days_back: int) -> dict:
     }
 
 
+try:
+    @workflows.activity(
+        name="fetch-garmin-data",
+        start_to_close_timeout=timedelta(minutes=10),
+        retry_policy_max_attempts=3,
+    )
+    async def fetch_garmin_data(days_back: int) -> dict:
+        """Fetch runs/activities and daily summaries for the last days_back days."""
+        return _fetch_impl(days_back)
+except Exception:
+    logger.exception("ACTIVITY DECORATOR FAILED")
+    raise
+
+
 def _daterange(start: date, end: date):
     day = start
     while day <= end:
@@ -77,12 +84,16 @@ def _daterange(start: date, end: date):
         day += timedelta(days=1)
 
 
-@workflows.workflow.define(
-    name="garmin-sync",
-    workflow_display_name="Garmin Sync",
-    workflow_description="Fetch Garmin Connect data via the Personal API.",
-)
-class GarminSyncWorkflow:
-    @workflows.workflow.entrypoint
-    async def run(self, input: GarminSyncInput) -> dict:
-        return await fetch_garmin_data(input.days_back)
+try:
+    @workflows.workflow.define(
+        name="garmin-sync",
+        workflow_display_name="Garmin Sync",
+        workflow_description="Fetch Garmin Connect data via the Personal API.",
+    )
+    class GarminSyncWorkflow:
+        @workflows.workflow.entrypoint
+        async def run(self, input: GarminSyncInput) -> dict:
+            return await fetch_garmin_data(input.days_back)
+except Exception:
+    logger.exception("WORKFLOW DECORATOR FAILED")
+    raise

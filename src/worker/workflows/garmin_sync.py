@@ -63,6 +63,13 @@ def _fetch_impl(days_back: int) -> dict:
     }
 
 
+def _daterange(start: date, end: date):
+    day = start
+    while day <= end:
+        yield day
+        day += timedelta(days=1)
+
+
 try:
     @workflows.activity(
         name="fetch-garmin-data",
@@ -77,18 +84,9 @@ except Exception:
     raise
 
 
-def _daterange(start: date, end: date):
-    day = start
-    while day <= end:
-        yield day
-        day += timedelta(days=1)
-
-
 try:
     @workflows.workflow.define(
         name="garmin-sync",
-        workflow_display_name="Garmin Sync",
-        workflow_description="Fetch Garmin Connect data via the Personal API.",
     )
     class GarminSyncWorkflow:
         @workflows.workflow.entrypoint
